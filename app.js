@@ -22,6 +22,20 @@ function simplify(obj) {
       if (parsed['@type'] != '') {
         out['@type'] = parsed['@type'];
       }
+    } else if (key == 'ADDR') {
+      var value = obj[key];
+      if (typeof value['CONT'] !== 'undefined') {
+        value['@value'] += '\n'+value['CONT']['@value'];
+        delete value['CONT'];
+      }
+      out[key] = simplify(value);
+    } else if (key == 'DATE') {
+      var value = obj[key];
+      if (typeof value['TIME'] !== 'undefined') {
+        value['@value'] += ' '+value['TIME']['@value'];
+        delete value['TIME'];
+      }
+      out[key] = simplify(value);
     } else if (typeof obj[key] == 'string') {
       if (obj[key] != '') {
         out[key] = obj[key];
@@ -43,11 +57,44 @@ function transformId(raw) {
   }
   var pieces = raw.split(' ');
   pieces[0] = pieces[0].replace(/@/g, '');
-  out['@id'] = '/'+pieces[0];
+  out['@id'] = '_:'+pieces[0];
   if (pieces.length > 1) {
-    out['@type'] = '/'+pieces.slice(1).join(' ');
+    out['@type'] = '_:'+pieces.slice(1).join(' ');
   }
   return out;
+}
+function setContexts(obj) {
+  if (obj['@type'] == '_:INDI') {
+    obj['@type'] = 'foaf:Person';
+    obj = renameProperty(obj, 'NAME', 'foaf:name');
+    obj = renameProperty(obj, 'SEX', 'foaf:gender');
+    if (typeof obj['BIRT'] !== 'undefined') {
+      obj = renameProperty(obj, 'BIRT', 'bio:birth');
+      obj['bio:birth']['bio:principal'] = { '@id': obj['@id'] };
+      obj['bio:birth'] = renameProperty(obj['bio:birth'], 'PLAC', 'bio:place');
+    }
+  } else if (obj['@type'] == '_:FAM') {
+    obj['@type'] = 'bio:Marriage';
+    var partners = [];
+    if (typeof obj['HUSB'] !== 'undefined') {
+      partners.push(obj['HUSB']);
+      delete obj['HUSB'];
+    }
+    if (typeof obj['WIFE'] !== 'undefined') {
+      partners.push(obj['WIFE']);
+      delete obj['WIFE'];
+    }
+    obj['bio:partner'] = partners;
+  }
+
+  return obj;
+}
+function renameProperty(obj, oldName, newName) {
+  if (typeof obj[oldName] !== 'undefined') {
+    obj[newName] = obj[oldName];
+    delete obj[oldName];
+  }
+  return obj;
 }
 
 var filename = process.argv[2];
@@ -76,8 +123,7 @@ fs.on('data', function(line) {
   if (level == 0) {
     // Start new object
     if (cur !== false) {
-      var out = simplify(cur);
-      console.log(JSON.stringify(out, null, 2));
+      var out = setContexts(simplify(cur));
       data.push(out);
     }
     cur = {};
@@ -95,4 +141,15 @@ fs.on('data', function(line) {
     lastLevels[level] = parent[code];
   }
   //console.log(line);
+});
+fs.on('end', function() {
+  var graph = {
+    '@context': {
+      'foaf': 'http://xmlns.com/foaf/0.1/',
+      'rel': 'http://purl.org/vocab/relationship',
+      'bio': 'http://purl.org/vocab/bio/0.1/'
+    },
+    '@graph': data
+  };
+  console.log(JSON.stringify(graph, null, 2));
 });
