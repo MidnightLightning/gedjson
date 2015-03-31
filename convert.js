@@ -102,7 +102,6 @@ if (typeof filename === 'undefined' || filename == '') {
   console.log('Need to supply path to GED file');
   process.exit();
 }
-console.log('parsing '+filename+'...');
 
 var fs = fs.createReadStream(filename).pipe(new FileLines());
 var data = [];
@@ -147,7 +146,8 @@ fs.on('end', function() {
     '@context': {
       'foaf': 'http://xmlns.com/foaf/0.1/',
       'rel': 'http://purl.org/vocab/relationship',
-      'bio': 'http://purl.org/vocab/bio/0.1/'
+      'bio': 'http://purl.org/vocab/bio/0.1/',
+      'dc': 'http://purl.org/dc/elements/1.1/'
     },
     '@graph': data
   };
