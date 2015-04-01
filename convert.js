@@ -3,11 +3,12 @@ var FileLines = require('./fileLines');
 
 function simplify(obj) {
   var keys = Object.keys(obj);
+  var parsed;
   var out = {};
   if (keys.length == 1 && keys[0] == '@value') {
     if (obj['@value'][0] == '@') {
       // Value is an ID
-      var parsed = transformId(obj['@value']);
+      parsed = transformId(obj['@value']);
       out['@id'] = parsed['@id'];
       return out;
     }
@@ -17,7 +18,7 @@ function simplify(obj) {
     var key = keys[i];
     if (key == '@id') {
       // Value is an ID
-      var parsed = transformId(obj[key]);
+      parsed = transformId(obj[key]);
       out['@id'] = parsed['@id'];
       if (parsed['@type'] != '') {
         out['@type'] = parsed['@type'];
@@ -35,7 +36,7 @@ function simplify(obj) {
         value['@value'] += ' '+value['TIME']['@value'];
         delete value['TIME'];
       }
-      out[key] = simplify(value);
+      out['dc:date'] = simplify(value);
     } else if (typeof obj[key] == 'string') {
       if (obj[key] != '') {
         out[key] = obj[key];
@@ -52,7 +53,7 @@ function transformId(raw) {
     '@type': ''
   };
   if (raw[0] !== '@') {
-    out['@id'] = raw;
+    out['@id'] = '_:'+raw.trim();
     return out;
   }
   var pieces = raw.split(' ');
@@ -65,35 +66,84 @@ function transformId(raw) {
 }
 function setContexts(obj) {
   if (obj['@type'] == '_:INDI') {
+    // Process Individual object
     obj['@type'] = 'foaf:Person';
     obj = renameProperty(obj, 'NAME', 'foaf:name');
     obj = renameProperty(obj, 'SEX', 'foaf:gender');
-    if (typeof obj['BIRT'] !== 'undefined') {
-      obj = renameProperty(obj, 'BIRT', 'bio:birth');
-      obj['bio:birth']['bio:principal'] = { '@id': obj['@id'] };
-      obj['bio:birth'] = renameProperty(obj['bio:birth'], 'PLAC', 'bio:place');
-    }
+    obj = simplifyIndividualEvent(obj, 'BIRT', 'bio:Birth');
+    obj = simplifyIndividualEvent(obj, 'CHR', 'bio:Baptism');
+    obj = simplifyIndividualEvent(obj, 'CHRA', 'bio:Baptism');
+    obj = simplifyIndividualEvent(obj, 'BAPM', 'bio:Baptism');
+    obj = simplifyIndividualEvent(obj, 'BLES', 'bio:Baptism');
+    obj = simplifyIndividualEvent(obj, 'DEAT', 'bio:Death');
+    obj = simplifyIndividualEvent(obj, 'BURI', 'bio:Burial');
+    obj = simplifyIndividualEvent(obj, 'CREM', 'bio:Cremation');
+    obj = simplifyIndividualEvent(obj, 'ADOP', 'bio:Adoption');
+    obj = simplifyIndividualEvent(obj, 'BARM', 'bio:BarMitzvah');
+    obj = simplifyIndividualEvent(obj, 'BASM', 'bio:BasMitzvah');
+    obj = simplifyIndividualEvent(obj, 'CONF', 'bio:IndividualEvent', 'Confirmation');
+    obj = simplifyIndividualEvent(obj, 'FCOM', 'bio:IndividualEvent', 'First Communion');
+    obj = simplifyIndividualEvent(obj, 'ORDN', 'bio:Ordination');
+    obj = simplifyIndividualEvent(obj, 'NATU', 'bio:Naturalization');
+    obj = simplifyIndividualEvent(obj, 'EMIG', 'bio:Emigration');
+    obj = simplifyIndividualEvent(obj, 'IMMI', 'bio:IndividualEvent', 'Immigration');
+    obj = simplifyIndividualEvent(obj, 'PROB', 'bio:IndividualEvent', 'Probate');
+    obj = simplifyIndividualEvent(obj, 'WILL', 'bio:IndividualEvent', 'Will');
+    obj = simplifyIndividualEvent(obj, 'GRAD', 'bio:Graduation');
+    obj = simplifyIndividualEvent(obj, 'RETI', 'bio:Retirement');
+    obj = simplifyIndividualEvent(obj, 'EVEN', 'bio:IndividualEvent');
+
+    obj = renameProperty(obj, 'FAMS', 'bio:relationship');
   } else if (obj['@type'] == '_:FAM') {
-    obj['@type'] = 'bio:Marriage';
-    var partners = [];
-    if (typeof obj['HUSB'] !== 'undefined') {
-      partners.push(obj['HUSB']);
-      delete obj['HUSB'];
-    }
-    if (typeof obj['WIFE'] !== 'undefined') {
-      partners.push(obj['WIFE']);
-      delete obj['WIFE'];
-    }
-    obj['bio:partner'] = partners;
+    // Process Family object
+    obj['@type'] = 'bio:Relationship';
+    obj = renameProperty(obj, 'HUSB', 'bio:participant');
+    obj = renameProperty(obj, 'WIFE', 'bio:participant');
+
+    obj = simplifyGroupEvent(obj, 'ANUL', 'bio:Annulment');
+    obj = simplifyGroupEvent(obj, 'DIV', 'bio:Divorce');
+    obj = simplifyGroupEvent(obj, 'DIVF', 'bio:GroupEvent', 'Divorce Filed');
+    obj = simplifyGroupEvent(obj, 'MARR', 'bio:Marriage');
+    obj = simplifyGroupEvent(obj, 'MARB', 'bio:GroupEvent', 'Marriage Announcement');
+    obj = simplifyGroupEvent(obj, 'MARC', 'bio:GroupEvent', 'Marriage Contract');
+    obj = simplifyGroupEvent(obj, 'MARL', 'bio:GroupEvent', 'Marriage License');
+    obj = simplifyGroupEvent(obj, 'MARS', 'bio:GroupEvent', 'Marriage Settlement');
+    obj = simplifyGroupEvent(obj, 'EVEN', 'bio:GroupEvent');
   }
 
   return obj;
 }
 function renameProperty(obj, oldName, newName) {
-  if (typeof obj[oldName] !== 'undefined') {
+  if (typeof obj[oldName] === 'undefined') return obj;
+  if (typeof obj[newName] !== 'undefined') {
+    // New property already exists; append
+    if (!Array.isArray(obj[newName])) {
+      obj[newName] = [obj[newName]];
+    }
+    obj[newName].push(obj[oldName]);
+  } else {
     obj[newName] = obj[oldName];
-    delete obj[oldName];
   }
+  delete obj[oldName];
+  return obj;
+}
+function simplifyIndividualEvent(obj, oldName, newClass, label) {
+  if (typeof obj[oldName] === 'undefined') return obj;
+  obj[oldName]['bio:principal'] = {'@id': obj['@id']};
+  obj[oldName]['@type'] = newClass;
+  if (typeof label !== 'undefined') obj[oldName]['rdf:label'] = label;
+  obj[oldName] = renameProperty(obj[oldName], 'PLAC', 'bio:place');
+  obj = renameProperty(obj, oldName, 'bio:event');
+  return obj;
+}
+function simplifyGroupEvent(obj, oldName, newClass, label) {
+  if (typeof obj[oldName] === 'undefined') return obj;
+  var participant = obj['bio:participant'];
+  obj[oldName]['bio:partner'] = participant;
+  obj[oldName]['@type'] = newClass;
+  if (typeof label !== 'undefined') obj[oldName]['rdf:label'] = label;
+  obj[oldName] = renameProperty(obj[oldName], 'PLAC', 'bio:place');
+  obj = renameProperty(obj, oldName, 'bio:event');
   return obj;
 }
 
@@ -104,7 +154,17 @@ if (typeof filename === 'undefined' || filename == '') {
 }
 
 var fs = fs.createReadStream(filename).pipe(new FileLines());
+var graph = {
+  '@context': {
+    'foaf': 'http://xmlns.com/foaf/0.1/',
+    'rel': 'http://purl.org/vocab/relationship',
+    'bio': 'http://purl.org/vocab/bio/0.1/',
+    'dc': 'http://purl.org/dc/elements/1.1/'
+  }
+};
 var data = [];
+
+
 var cur = false;
 var lastLevels = {};
 fs.on('data', function(line) {
@@ -123,7 +183,18 @@ fs.on('data', function(line) {
     // Start new object
     if (cur !== false) {
       var out = setContexts(simplify(cur));
-      data.push(out);
+
+      if (out['@id'] == '_:HEAD') {
+        // Transplant into graph metadata
+        for (var prop in out) {
+          if (!out.hasOwnProperty(prop) || prop == '@id') continue;
+          graph[prop] = out[prop];
+        }
+      } else if (out['@id'] == '_:SUBM') {
+        graph['SUBM'] = out;
+      } else {
+        data.push(out);
+      }
     }
     cur = {};
     cur['@id'] = code+' '+value;
@@ -142,14 +213,6 @@ fs.on('data', function(line) {
   //console.log(line);
 });
 fs.on('end', function() {
-  var graph = {
-    '@context': {
-      'foaf': 'http://xmlns.com/foaf/0.1/',
-      'rel': 'http://purl.org/vocab/relationship',
-      'bio': 'http://purl.org/vocab/bio/0.1/',
-      'dc': 'http://purl.org/dc/elements/1.1/'
-    },
-    '@graph': data
-  };
+  graph['@graph'] = data;
   console.log(JSON.stringify(graph, null, 2));
 });

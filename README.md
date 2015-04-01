@@ -7,7 +7,7 @@ The [JSON-LD](http://json-ld.org) [specification](http://www.w3.org/TR/json-ld/)
 
 * [Friend of a Friend](http://xmlns.com/foaf/spec/) (`foaf`): People and common relations between them.
 * [Relationship](http://purl.org/vocab/relationship) (`rel`): Deeper relationship terms for relating two people.
-* [Biography](http://purl.org/vocab/bio/0.1/) (`bio`): Vocabulary for enumerating events in a person's life and participants in those events.
+* [Biography](http://purl.org/vocab/bio/0.1/) (`bio`): Vocabulary for enumerating events in a person's life and participants in those events ([GitHub Source](https://github.com/iand/vocab-bio)).
 * [Dublin Core](http://dublincore.org/documents/dcmi-terms/) (`dc`): Vocabulary for citing sources and dates.
 
 
@@ -35,22 +35,32 @@ The output structure of the `convert.js` script looks like:
   },
   "@graph": [
     {
-      "@id": "HEAD",
-    },
-    {
       "@id": "_:I101",
       "@type": "foaf:Person",
-      "FAMS": {
-        "@id": "_:F101"
-      },
       "foaf:name": "John /Smith/",
       "foaf:gender": "M",
-      "bio:birth": {
+      "bio:event": {
+        "@type": "bio:Birth",
         "DATE": "1 APR 1900",
         "bio:principal": {
           "@id": "_:I101"
         }
+      },
+      "bio:relationship": {
+        "@id": "_:F101"
       }
+    },
+    {
+      "@id": "_:F101",
+      "@type": "bio:Relationship",
+      "bio:participant": [
+        {
+          "@id": "_:I101"
+        },
+        {
+          "@id": "_:I102"
+        }
+      ]
     }
   ]
 }
@@ -65,14 +75,13 @@ Grab the `@graph` property from the result JSON, which is an array of JSON objec
 * `CONT` items are concatenated onto their parent items with a line break
 * `TIME` items are concatenated onto their parent `DATE` items with a space
 * Events on an `INDI` have that individual as `bio:principal`
-* Events on a `FAM` have individuals as `bio:partner`s. Minor players are `bio:agent`s
 
 GEDCOM | Linked Data | Note
 :--- | :--- | :---
 `INDI` | `foaf:Person` |
 `INDI.NAME` | `foaf:name` |
 `INDI.SEX` | `foaf:gender` |
-`INDI.BIRT` |
+`INDI.BIRT` | `bio:Birth`
 `INDI.CHR` | `bio:Baptism`
 `INDI.CHRA` | `bio:Baptism`
 `INDI.BAPM` | `bio:Baptism`
@@ -95,14 +104,15 @@ GEDCOM | Linked Data | Note
 `INDI.GRAD` | `bio:Graduation`
 `INDI.RETI` | `bio:Retirement`
 `INDI.EVEN` | `bio:IndividualEvent`
-`FAM` | `bio:Marriage` | The `bio:Marriage` class is for a generic "uniting into a family unit" so maps well to the GEDCOM `FAM` grouping
-`FAM.HUSB` | `bio:partner` | Both husband and wife become `bio:partner`s on the `bio:Marriage` event; to find the gender, reference the related `foaf:Person`.
-`FAM.WIFE` | `bio:partner` | Both husband and wife become `bio:partner`s on the `bio:Marriage` event; to find the gender, reference the related `foaf:Person`.
+`FAM` | `bio:Relationship` |
+`FAM.HUSB` | `bio:participant` | Both husband and wife become `bio:participant`s on the `FAM` Relationship; to find the gender, reference the related `foaf:Person`.
+`FAM.WIFE` | `bio:participant` | Both husband and wife become `bio:participant`s on the `FAM` Relationship; to find the gender, reference the related `foaf:Person`.
 `FAM.ANUL` | `bio:Annulment`
 `FAM.CENS` | `bio:GroupEvent` | Census
 `FAM.DIV` | `bio:Divorce`
 `FAM.DIVF` | `bio:GroupEvent` | Divorce filed
 `FAM.ENGA` | `bio:GroupEvent` | Engagement
+`FAM.MARR` | `bio:Marriage`
 `FAM.MARB` | `bio:GroupEvent` | Marriage Announcement
 `FAM.MARC` | `bio:GroupEvent` | Marriage Contract
 `FAM.MARL` | `bio:GroupEvent` | Marriage License
@@ -121,7 +131,7 @@ The GEDCOM format links individuals through `FAM` objects, with the `HUSB`, `WIF
 
 But for traversing person-to-person relationships, it adds a needless step. The conversion script adds `rel:childOf`, `rel:siblingOf`, `rel:spouseOf`, and `rel:parentOf` to the individual (`foaf:Person`) objects, so `FAM`/`bio:Marriage` objects can be bypassed if desired. Where applicable, the more strict `bio:child`, `bio:father`, and `bio:mother` are used as well.
 
-* Data from the `MARR` tag (if it exists) on a `FAM` tag is pulled up to the `FAM` object since that is the more data about the `bio:Marriage` event.
+* `CHIL` tags are left on the `FAM` (`bio:Relationship`) object to preseve the data of which marriage a child came from.
 * If the `FAM` object has an `ANUL` tag, no `rel:spouseOf` relations are generated.
 * If the `FAM` object has an `ENGA` tag, but no `MARR` tag, `rel:engagedTo` is used instead of `rel:spouseOf`.
 * If the `INDI` object has an `FAMC` tag with `PEDI` set to anything other than 'birth' or 'natural', `bio:child/father/mother` relations are not created.
