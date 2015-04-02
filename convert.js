@@ -18,18 +18,18 @@ function simplify(obj) {
     }).map(function(el) {
       if (typeof el == 'string') {
         if (el[0] == '@') {
-        // Value is an ID
+          // Value is an ID
           var parsed = transformId(el);
-        if (key == '@value') {
-          // This is the ID of the current object
+          if (key == '@value') {
+            // This is the ID of the current object
             return parsed;
-        } else {
+          } else {
             return {'@id': parsed['@id']};
+          }
+        } else {
+          return el;
         }
       } else {
-          return el;
-      }
-    } else {
         return simplify(el);
       }
     });
@@ -124,7 +124,7 @@ function renameProperty(obj, oldName, newName) {
     if (!Array.isArray(obj[newName])) {
       obj[newName] = [obj[newName]];
     }
-    obj[newName].push(obj[oldName]);
+    obj[newName] = obj[newName].concat(obj[oldName]);
   } else {
     obj[newName] = obj[oldName];
   }
@@ -134,10 +134,19 @@ function renameProperty(obj, oldName, newName) {
 
 function simplifyIndividualEvent(obj, oldName, newClass, label) {
   if (typeof obj[oldName] === 'undefined') return obj;
-  obj[oldName]['bio:principal'] = {'@id': obj['@id']};
-  obj[oldName]['@type'] = newClass;
-  if (typeof label !== 'undefined') obj[oldName]['rdf:label'] = label;
-  obj[oldName] = renameProperty(obj[oldName], 'PLAC', 'bio:place');
+  var parseEvent = function(el) {
+    if (el == 'Y') el = {};
+    el['bio:principal'] = {'@id': obj['@id']};
+    el['@type'] = newClass;
+    if (typeof label !== 'undefined') el['rdf:label'] = label;
+    el = renameProperty(el, 'PLAC', 'bio:place');
+    return el;
+  };
+  if (Array.isArray(obj[oldName])) {
+    obj[oldName] = obj[oldName].map(parseEvent);
+  } else {
+    obj[oldName] = parseEvent(obj[oldName]);
+  }
   obj = renameProperty(obj, oldName, 'bio:event');
   return obj;
 }
@@ -145,10 +154,19 @@ function simplifyIndividualEvent(obj, oldName, newClass, label) {
 function simplifyGroupEvent(obj, oldName, newClass, label) {
   if (typeof obj[oldName] === 'undefined') return obj;
   var participant = obj['bio:participant'];
-  obj[oldName]['bio:partner'] = participant;
-  obj[oldName]['@type'] = newClass;
-  if (typeof label !== 'undefined') obj[oldName]['rdf:label'] = label;
-  obj[oldName] = renameProperty(obj[oldName], 'PLAC', 'bio:place');
+  var parseEvent = function(el) {
+    if (el == 'Y') el = {};
+    el['bio:partner'] = participant;
+    el['@type'] = newClass;
+    if (typeof label !== 'undefined') el['rdf:label'] = label;
+    el = renameProperty(el, 'PLAC', 'bio:place');
+    return el;
+  };
+  if (Array.isArray(obj[oldName])) {
+    obj[oldName] = obj[oldName].map(parseEvent);
+  } else {
+    obj[oldName] = parseEvent(obj[oldName]);
+  }
   obj = renameProperty(obj, oldName, 'bio:event');
   return obj;
 }
@@ -174,7 +192,52 @@ var graph = {
     'dc': 'http://purl.org/dc/elements/1.1/'
   }
 };
-var data = [];
+
+var knownObjects = {};
+function parseKnownObjects() {
+  var keys = Object.keys(knownObjects);
+  graph['@graph'] = [];
+  for (var i = 0; i < keys.length; i++) {
+    var objId = keys[i];
+    var obj = knownObjects[keys[i]];
+    if (obj['@type'] == 'foaf:Person') {
+      if (typeof obj['bio:relationship'] !== 'undefined') {
+        // Look up marriages, to find spouse and any children
+        var relationships = obj['bio:relationship'];
+        if (!Array.isArray(relationships)) relationships = [relationships];
+        var spouses = [];
+        for (var j = 0; j < relationships.length; j++) {
+          var fam = knownObjects[relationships[j]['@id']];
+          var tmp = findSpouses(fam, obj['@id']);
+          spouses = spouses.concat(findSpouses(fam, obj['@id']));
+        }
+        if (spouses.length == 1) {
+          obj['rel:spouseOf'] = spouses[0];
+        } else if (spouses.length > 1) {
+          obj['rel:spouseOf'] = spouses;
+        }
+      }
+      if (typeof obj['FAMC'] !== 'undefined') {
+        // Look up family, to find parents
+      }
+    }
+    graph['@graph'].push(obj);
+  }
+  console.log(JSON.stringify(graph, null, 2));
+}
+
+function findSpouses(fam, knownId) {
+  var participants = fam['bio:participant'];
+  if (typeof participants === 'undefined') {
+    console.log("Marriage relationship "+fam['@id']+" has no participants");
+    return false;
+  }
+  if (!Array.isArray(participants)) participants = [participants];
+  participants = participants.filter(function(el) {
+    return el['@id'] !== knownId;
+  });
+  return participants;
+}
 
 fs.on('data', function(obj) {
   if (typeof obj === 'string') return;
@@ -188,10 +251,9 @@ fs.on('data', function(obj) {
   } else if (obj['@id'] == '_:SUBM') {
     graph['SUBM'] = obj;
   } else {
-    data.push(obj);
+    knownObjects[obj['@id']] = obj;
   }
 });
 fs.on('end', function() {
-  graph['@graph'] = data;
-  console.log(JSON.stringify(graph, null, 2));
+  parseKnownObjects();
 });
