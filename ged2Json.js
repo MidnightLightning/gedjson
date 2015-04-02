@@ -35,26 +35,38 @@ Ged2Json.prototype.simplify = function simplify(obj) {
   }
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
+    if (!Array.isArray(obj[key])) {
+      obj[key] = [obj[key]];
+    }
     if (key == 'ADDR') {
-      var value = obj[key];
-      if (typeof value['CONT'] !== 'undefined') {
-        value['@value'] += '\n'+value['CONT']['@value'];
-        delete value['CONT'];
-      }
-      out[key] = this.simplify(value);
+      out[key] = obj[key].map(function(el) {
+        if (typeof el['CONT'] !== 'undefined') {
+          el['@value'] += '\n'+el['CONT']['@value'];
+          delete el['CONT'];
+        }
+        return this.simplify(el);
+      }.bind(this));
     } else if (key == 'DATE') {
-      var value = obj[key];
-      if (typeof value['TIME'] !== 'undefined') {
-        value['@value'] += ' '+value['TIME']['@value'];
-        delete value['TIME'];
-      }
-      out[key] = this.simplify(value);
-    } else if (typeof obj[key] == 'string') {
-      if (obj[key] != '') {
-        out[key] = obj[key];
-      }
+      out[key] = obj[key].map(function(el) {
+        if (typeof el['TIME'] !== 'undefined') {
+          el['@value'] += ' '+el['TIME']['@value'];
+          delete el['TIME'];
+        }
+        return this.simplify(el);
+      }.bind(this));
     } else {
-      out[key] = this.simplify(obj[key]);
+      out[key] = obj[key].map(function(el) {
+        if (typeof el == 'string') {
+          return el;
+        }
+        return this.simplify(el);
+      }.bind(this));
+    }
+    if (out[key].length === 1) {
+      out[key] = out[key][0];
+    }
+    if (out[key] === '') {
+      delete out[key];
     }
   }
   return out;
@@ -89,8 +101,16 @@ Ged2Json.prototype._transform = function(line, encoding, callback) {
       console.log(line);
       throw new Error('No parent for level '+level);
     }
-    parent[code] = { '@value': value };
-    this.lastLevels[level] = parent[code];
+    var newItem = { '@value': value };
+    if (typeof parent[code] === 'undefined') {
+      parent[code] = newItem;
+    } else {
+      if (!Array.isArray(parent[code])) {
+        parent[code] = [parent[code]];
+      }
+      parent[code].push(newItem);
+    }
+    this.lastLevels[level] = newItem;
   }
   callback();
 };

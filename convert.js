@@ -4,29 +4,46 @@ var Ged2Json = require('./ged2Json');
 
 function simplify(obj) {
   var keys = Object.keys(obj);
-  var parsed;
   var out = {};
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    if (typeof obj[key] == 'string') {
-      if (obj[key] === '') continue;
-      if (obj[key][0] == '@') {
+    if (!Array.isArray(obj[key])) {
+      obj[key] = [obj[key]];
+    }
+    out[key] = obj[key].filter(function(el) {
+      if (typeof el == 'string') {
+        return el !== '';
+      }
+      return true;
+    }).map(function(el) {
+      if (typeof el == 'string') {
+        if (el[0] == '@') {
         // Value is an ID
-        parsed = transformId(obj[key]);
+          var parsed = transformId(el);
         if (key == '@value') {
           // This is the ID of the current object
-          out['@id'] = parsed['@id'];
-          out['@type'] = parsed['@type'];
+            return parsed;
         } else {
-          out[key] = {'@id': parsed['@id']};
+            return {'@id': parsed['@id']};
         }
       } else {
-        out[key] = obj[key];
+          return el;
       }
     } else {
-      out[key] = simplify(obj[key]);
+        return simplify(el);
+      }
+    });
+    if (out[key].length == 1) {
+      out[key] = out[key][0];
+    }
+    if (typeof out['@value'] !== 'undefined' && typeof out['@value']['@id'] !== 'undefined') {
+      var nested = out['@value'];
+      out['@id'] = nested['@id'];
+      out['@type'] = nested['@type'];
+      delete out['@value'];
     }
   }
+
   out = renameProperty(out, 'DATE', 'dc:date');
   return out;
 }
