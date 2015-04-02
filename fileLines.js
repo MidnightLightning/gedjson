@@ -2,8 +2,16 @@ var util = require('util');
 var Transform = require('stream').Transform;
 
 util.inherits(FileLines, Transform);
-function FileLines(filename) {
-  if (!(this instanceof FileLines)) return new byLines(FileLines);
+/**
+ * Stream file by line breaks
+ *
+ * Implements a Node Transform Stream interface, so should be used like:
+ * var fileLineStream = fs.createReadStream(filename).pipe(new FileLines());
+ *
+ * @param {Object} options Set maxInBoundBuffer if desired, to change it from 10 MB default
+ */
+function FileLines(options) {
+  if (!(this instanceof FileLines)) return new FileLines(options);
 
   Transform.call(this, { objectMode: true });
   if (typeof options === 'undefined') {

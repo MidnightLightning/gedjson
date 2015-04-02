@@ -1,52 +1,36 @@
 var fs = require('fs');
 var FileLines = require('./fileLines');
+var Ged2Json = require('./ged2Json');
 
 function simplify(obj) {
   var keys = Object.keys(obj);
   var parsed;
   var out = {};
-  if (keys.length == 1 && keys[0] == '@value') {
-    if (obj['@value'][0] == '@') {
-      // Value is an ID
-      parsed = transformId(obj['@value']);
-      out['@id'] = parsed['@id'];
-      return out;
-    }
-    return obj['@value'];
-  }
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    if (key == '@id') {
-      // Value is an ID
-      parsed = transformId(obj[key]);
-      out['@id'] = parsed['@id'];
-      if (parsed['@type'] != '') {
-        out['@type'] = parsed['@type'];
-      }
-    } else if (key == 'ADDR') {
-      var value = obj[key];
-      if (typeof value['CONT'] !== 'undefined') {
-        value['@value'] += '\n'+value['CONT']['@value'];
-        delete value['CONT'];
-      }
-      out[key] = simplify(value);
-    } else if (key == 'DATE') {
-      var value = obj[key];
-      if (typeof value['TIME'] !== 'undefined') {
-        value['@value'] += ' '+value['TIME']['@value'];
-        delete value['TIME'];
-      }
-      out['dc:date'] = simplify(value);
-    } else if (typeof obj[key] == 'string') {
-      if (obj[key] != '') {
+    if (typeof obj[key] == 'string') {
+      if (obj[key] === '') continue;
+      if (obj[key][0] == '@') {
+        // Value is an ID
+        parsed = transformId(obj[key]);
+        if (key == '@value') {
+          // This is the ID of the current object
+          out['@id'] = parsed['@id'];
+          out['@type'] = parsed['@type'];
+        } else {
+          out[key] = {'@id': parsed['@id']};
+        }
+      } else {
         out[key] = obj[key];
       }
     } else {
       out[key] = simplify(obj[key]);
     }
   }
+  out = renameProperty(out, 'DATE', 'dc:date');
   return out;
 }
+
 function transformId(raw) {
   var out = {
     '@id': '',
@@ -64,6 +48,7 @@ function transformId(raw) {
   }
   return out;
 }
+
 function setContexts(obj) {
   if (obj['@type'] == '_:INDI') {
     // Process Individual object
@@ -103,6 +88,7 @@ function setContexts(obj) {
     obj = simplifyGroupEvent(obj, 'ANUL', 'bio:Annulment');
     obj = simplifyGroupEvent(obj, 'DIV', 'bio:Divorce');
     obj = simplifyGroupEvent(obj, 'DIVF', 'bio:GroupEvent', 'Divorce Filed');
+    obj = simplifyGroupEvent(obj, 'ENGA', 'bio:GroupEvent', 'Engagement');
     obj = simplifyGroupEvent(obj, 'MARR', 'bio:Marriage');
     obj = simplifyGroupEvent(obj, 'MARB', 'bio:GroupEvent', 'Marriage Announcement');
     obj = simplifyGroupEvent(obj, 'MARC', 'bio:GroupEvent', 'Marriage Contract');
@@ -113,6 +99,7 @@ function setContexts(obj) {
 
   return obj;
 }
+
 function renameProperty(obj, oldName, newName) {
   if (typeof obj[oldName] === 'undefined') return obj;
   if (typeof obj[newName] !== 'undefined') {
@@ -127,6 +114,7 @@ function renameProperty(obj, oldName, newName) {
   delete obj[oldName];
   return obj;
 }
+
 function simplifyIndividualEvent(obj, oldName, newClass, label) {
   if (typeof obj[oldName] === 'undefined') return obj;
   obj[oldName]['bio:principal'] = {'@id': obj['@id']};
@@ -136,6 +124,7 @@ function simplifyIndividualEvent(obj, oldName, newClass, label) {
   obj = renameProperty(obj, oldName, 'bio:event');
   return obj;
 }
+
 function simplifyGroupEvent(obj, oldName, newClass, label) {
   if (typeof obj[oldName] === 'undefined') return obj;
   var participant = obj['bio:participant'];
@@ -147,13 +136,19 @@ function simplifyGroupEvent(obj, oldName, newClass, label) {
   return obj;
 }
 
+
+
+// Main process start
 var filename = process.argv[2];
 if (typeof filename === 'undefined' || filename == '') {
   console.log('Need to supply path to GED file');
   process.exit();
 }
 
-var fs = fs.createReadStream(filename).pipe(new FileLines());
+var fs = fs
+  .createReadStream(filename)
+  .pipe(new FileLines())
+  .pipe(new Ged2Json());
 var graph = {
   '@context': {
     'foaf': 'http://xmlns.com/foaf/0.1/',
@@ -164,53 +159,20 @@ var graph = {
 };
 var data = [];
 
-
-var cur = false;
-var lastLevels = {};
-fs.on('data', function(line) {
-  var s = line.indexOf(' ');
-  var level = parseInt(line.slice(0,s));
-  var s2 = line.indexOf(' ', s+1);
-  var code, value;
-  if (s2 !== -1) {
-    code = line.slice(s+1, s2);
-    value = line.slice(s2+1);
-  } else {
-    code = line.slice(s+1);
-    value = '';
-  }
-  if (level == 0) {
-    // Start new object
-    if (cur !== false) {
-      var out = setContexts(simplify(cur));
-
-      if (out['@id'] == '_:HEAD') {
-        // Transplant into graph metadata
-        for (var prop in out) {
-          if (!out.hasOwnProperty(prop) || prop == '@id') continue;
-          graph[prop] = out[prop];
-        }
-      } else if (out['@id'] == '_:SUBM') {
-        graph['SUBM'] = out;
-      } else {
-        data.push(out);
-      }
+fs.on('data', function(obj) {
+  if (typeof obj === 'string') return;
+  obj = setContexts(simplify(obj));
+  if (obj['@id'] == '_:HEAD') {
+    // Transplant into graph metadata
+    for (var prop in obj) {
+      if (!obj.hasOwnProperty(prop) || prop == '@id') continue;
+      graph[prop] = obj[prop];
     }
-    cur = {};
-    cur['@id'] = code+' '+value;
-    lastLevels = {};
-    lastLevels[0] = cur;
+  } else if (obj['@id'] == '_:SUBM') {
+    graph['SUBM'] = obj;
   } else {
-    var parent = lastLevels[level-1];
-    if (typeof parent === 'undefined') {
-      console.log(JSON.stringify(lastLevels, null, 2));
-      console.log(line);
-      throw new Error('No parent for level '+level);
-    }
-    parent[code] = { '@value': value };
-    lastLevels[level] = parent[code];
+    data.push(obj);
   }
-  //console.log(line);
 });
 fs.on('end', function() {
   graph['@graph'] = data;
