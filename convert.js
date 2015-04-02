@@ -209,7 +209,9 @@ function parseKnownObjects() {
         for (var j = 0; j < relationships.length; j++) {
           var fam = knownObjects[relationships[j]['@id']];
           var tmp = findSpouses(fam, obj['@id']);
-          spouses = spouses.concat(findSpouses(fam, obj['@id']));
+          if (tmp !== false) {
+            spouses = spouses.concat(tmp);
+          }
         }
         if (spouses.length == 1) {
           obj['rel:spouseOf'] = spouses[0];
@@ -219,6 +221,17 @@ function parseKnownObjects() {
       }
       if (typeof obj['FAMC'] !== 'undefined') {
         // Look up family, to find parents
+        var parentFam = knownObjects[obj['FAMC']['@id']];
+        var parents = findParents(parentFam, obj['@id']);
+        if (parents !== false) {
+          var merged = parents.fathers.concat(parents.mothers);
+          if (merged.length > 0) {
+            obj['rel:childOf'] = merged;
+          }
+          if (parents.siblings.length > 0) {
+            obj['rel:siblingOf'] = parents.siblings;
+          }
+        }
       }
     }
     graph['@graph'].push(obj);
@@ -237,6 +250,43 @@ function findSpouses(fam, knownId) {
     return el['@id'] !== knownId;
   });
   return participants;
+}
+
+function findParents(fam, knownId) {
+  var parents = fam['bio:participant'];
+  var rs = {
+    'fathers': [],
+    'mothers': [],
+    'siblings': []
+  };
+  if (typeof parents === 'undefined') {
+    parents = [];
+  }
+  if (!Array.isArray(parents)) parents = [parents];
+  var femaleStrings = ['f', 'female', 'fem'];
+  for (var i = 0; i < parents.length; i++) {
+    var parent = knownObjects[parents[i]['@id']];
+    var gender = parent['foaf:gender'].toLowerCase();
+    if (femaleStrings.indexOf(gender) !== -1) {
+      rs.mothers.push(parents[i]);
+    } else {
+      rs.fathers.push(parents[i]);
+    }
+  }
+
+  var children = fam['CHIL'];
+  if (typeof children === 'undefined') {
+    children = [];
+  }
+  if (!Array.isArray(children)) children = [children];
+  for (var i = 0; i < children.length; i++) {
+    var childId = children[i]['@id'];
+    if (childId != knownId) {
+      rs.siblings.push({'@id': childId});
+    }
+  }
+
+  return rs;
 }
 
 fs.on('data', function(obj) {
