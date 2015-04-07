@@ -68,7 +68,7 @@ The output structure of the `convert.js` script looks like:
 
 
 # Don't care about Semantic data
-Grab the `@graph` property from the result JSON, which is an array of JSON objects. Objects that have a `@type` property of `foaf:Person` are `INDI` objects in the original GEDCOM, and `@type` of `bio:Marriage` are `FAM` objects in the original file. Between those two types, all the properties of the original data file should be present.
+Grab the `@graph` property from the result JSON, which is an array of JSON objects. Objects that have a `@type` property of `foaf:Person` are `INDI` objects in the original GEDCOM, and `@type` of `bio:Relationship` are `FAM` objects in the original file. Between those two types, all the properties of the original data file should be present.
 
 # Mapping
 
@@ -129,17 +129,25 @@ GEDCOM | Linked Data | Note
 # Linkages
 The GEDCOM format links individuals through `FAM` objects, with the `HUSB`, `WIFE`, and `CHIL` references pointing to the various individuals, rather than individuals referencing each other. This is useful for drawing family tree diagrams, as the parents are usually arranged horizontally and joined to a central node, which the children's lines sprout from.
 
-But for traversing person-to-person relationships, it adds a needless step. The conversion script adds `rel:childOf`, `rel:siblingOf`, `rel:spouseOf`, and `rel:parentOf` to the individual (`foaf:Person`) objects, so `FAM`/`bio:Marriage` objects can be bypassed if desired. Where applicable, the more strict `bio:child`, `bio:father`, and `bio:mother` are used as well.
+But for traversing person-to-person relationships, it adds a needless step. The conversion script adds `rel:childOf` `rel:siblingOf`, `rel:spouseOf`, and `rel:parentOf` to the individual (`foaf:Person`) objects, so `FAM`/`bio:Marriage` objects can be bypassed if desired. Where applicable, the more strict `bio:child`, `bio:father`, and `bio:mother` are used instead.
 
-* `CHIL` tags are left on the `FAM` (`bio:Relationship`) object to preseve the data of which marriage a child came from.
-* If the `FAM` object has an `ANUL` tag, no `rel:spouseOf` relations are generated.
+* `CHIL` tags are left on the `FAM` (`bio:Relationship`) object to preserve the data of which marriage a child came from.
+* If the `FAM` object has an `ANUL` tag, no `rel:spouseOf` relations are generated. (TODO)
 * If the `FAM` object has an `ENGA` tag, but no `MARR` tag, `rel:engagedTo` is used instead of `rel:spouseOf`.
-* If the `INDI` object has an `FAMC` tag with `PEDI` set to anything other than 'birth' or 'natural', `bio:child/father/mother` relations are not created.
+* If the `FAM` object has no `ENGA` and no `MARR` tag, no `rel:spouseOf` or `rel:engagedTo` are created between the parents, but any children get the proper `rel:childOf` and `rel:siblingOf` relations added.
+* If the `INDI` object has an `FAMC` tag with `PEDI` set to 'natural' or 'birth', `bio:child/father/mother` tags are used instead of `rel:childOf/parentOf`.
+* If the `FAM.CHIL` object has `_MREL` or `_FREL` attributes (used by Family Tree Maker software to indicate pedigree) set to 'natural', `bio:child/father/mother` tags are used instead of `rel:childOf/parentOf`.
 
-* If an `ANUL`, `DIV`, or `DIVF` exists on a `FAM` object, the `bio:concludingEvent` of that `bio:Marriage` is set to that event. If both `DIV` and `DIVF` exist, `DIV` takes precedence as the concluding event.
-* If one of the partners in a `bio:Marriage` has a Death event (or the first occurring Death if both are), that Death event is set as the `bio:concludingEvent` for the `bio:Marriage` if no `ANUL`, `DIV`, or `DIVF` exists.
-* If `DEAT` and `BURI` or `CREM` exist, `bio:followingEvent` and `bio:precedingEvent` relationships are added.
+* If an `ANUL`, `DIV`, or `DIVF` exists on a `FAM` object, the `bio:concludingEvent` of that `bio:Marriage` is set to that event. If both `DIV` and `DIVF` exist, `DIV` takes precedence as the concluding event. (TODO)
+* If one of the partners in a `bio:Marriage` has a Death event (or the first occurring Death if both are), that Death event is set as the `bio:concludingEvent` for the `bio:Marriage` if no `ANUL`, `DIV`, or `DIVF` exists. (TODO)
+* If `DEAT` and `BURI` or `CREM` exist, `bio:followingEvent` and `bio:precedingEvent` relationships are added. (TODO)
 
+The `INDI.FAMC.PEDI` (Pedigree) and `INDI.FAMC.STAT` (Status) tags break the standard relationship between an `INDI` and a `FAM` object. The `PEDI` and `STAT` attributes are not attributes of the `FAM` referenced by the `FAMC` ID, but rather attributes of the link that individual has with that family (reification of the link), which doesn't work well in JSON-LD. So, to get that to work properly, the `FAMC` property gets a new `ofFamily` attribute, which is set to the ID of the linked family, rather than the `FAMC` having that `@id` directly.
+
+# Visualization ideas:
+* [Pedigree tree](http://bl.ocks.org/mbostock/2966094): D3 "elbow dendrogram" using the "tree" D3 layout.
+* [D3 smart force labels](http://bl.ocks.org/MoritzStefaner/1377729): Adding functinality to have labels "orbit" their node, and repel each other, so they stay out of each other's way.
 
 # Other Resources
 * [danbri blog post](http://danbri.org/words/2009/01/18/390)
+* [GEDCOM files into D3](http://www.nowherenearithaca.com/2015/01/loading-gedcom-files-into-d3js-family.html)
