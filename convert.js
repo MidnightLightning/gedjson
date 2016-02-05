@@ -134,10 +134,13 @@ function simplify(obj) {
       return true;
     }).map(function(el) {
       if (typeof el == 'string') {
-        if (el[0] == '@') {
+        if (key == 'GEDVALUE' && el == 'HEAD') {
+          // HEAD element is an odd case
+          return {'@id': '_:HEAD'};
+        } else if (el[0] == '@') {
           // Value is an ID
           var parsed = transformId(el);
-          if (key == '@value') {
+          if (key == 'GEDVALUE') {
             // This is the ID of the current object
             return parsed;
           } else {
@@ -153,15 +156,16 @@ function simplify(obj) {
     if (out[key].length == 1) {
       out[key] = out[key][0];
     }
-    if (typeof out['@value'] !== 'undefined' && typeof out['@value']['@id'] !== 'undefined') {
-      var nested = out['@value'];
+    if (typeof out['GEDVALUE'] !== 'undefined' && typeof out['GEDVALUE']['@id'] !== 'undefined') {
+      var nested = out['GEDVALUE'];
       out['@id'] = nested['@id'];
       if (nested['@type'] !== '') {
         out['@type'] = nested['@type'];
       }
-      delete out['@value'];
+      delete out['GEDVALUE'];
     }
   }
+  //console.log('simplified', JSON.stringify(out, null, 2));
 
   renameProperty(out, 'DATE', 'dc:date');
   return out;
@@ -266,6 +270,7 @@ function simplifyIndividualEvent(obj, oldName, newClass, label) {
   if (typeof obj[oldName] === 'undefined') return obj;
   parseProperty(obj, oldName, function(el) {
     if (el == 'Y') el = {};
+    if (el['GEDVALUE'] == 'Y') delete el['GEDVALUE'];
     el['bio:principal'] = {'@id': obj['@id']};
     el['@type'] = newClass;
     if (typeof label !== 'undefined') el['rdf:label'] = label;
@@ -287,6 +292,7 @@ function simplifyGroupEvent(obj, oldName, newClass, label) {
   var participant = obj['bio:participant'];
   parseProperty(obj, oldName, function(el) {
     if (el == 'Y') el = {};
+    if (el['GEDVALUE'] == 'Y') delete el['GEDVALUE'];
     el['bio:partner'] = participant;
     el['@type'] = newClass;
     if (typeof label !== 'undefined') el['rdf:label'] = label;

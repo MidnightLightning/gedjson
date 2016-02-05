@@ -9,7 +9,7 @@ util.inherits(Ged2Json, Transform);
  * this Transform Stream will collect them into JSON objects and emit them.
  *
  * As GEDCOM data structures allow some data at the root node as well as
- * child elements on that same node, that data is moved into the `@values`
+ * child elements on that same node, that data is moved into the `GEDVALUE`
  * property of the object assigned to that root node, along with any child elements.
  *
  * @param {Object} options
@@ -30,8 +30,8 @@ Ged2Json.prototype.simplify = function simplify(obj) {
   var keys = Object.keys(obj);
   var parsed;
   var out = {};
-  if (keys.length == 1 && keys[0] == '@value') {
-    return obj['@value'];
+  if (keys.length == 1 && keys[0] == 'GEDVALUE') {
+    return obj['GEDVALUE'];
   }
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
@@ -41,7 +41,7 @@ Ged2Json.prototype.simplify = function simplify(obj) {
     if (key == 'ADDR') {
       out[key] = obj[key].map(function(el) {
         if (typeof el['CONT'] !== 'undefined') {
-          el['@value'] += '\n'+el['CONT']['@value'];
+          el['GEDVALUE'] += '\n'+el['CONT']['GEDVALUE'];
           delete el['CONT'];
         }
         return this.simplify(el);
@@ -49,7 +49,7 @@ Ged2Json.prototype.simplify = function simplify(obj) {
     } else if (key == 'DATE') {
       out[key] = obj[key].map(function(el) {
         if (typeof el['TIME'] !== 'undefined') {
-          el['@value'] += ' '+el['TIME']['@value'];
+          el['GEDVALUE'] += ' '+el['TIME']['GEDVALUE'];
           delete el['TIME'];
         }
         return this.simplify(el);
@@ -91,7 +91,7 @@ Ged2Json.prototype._transform = function(line, encoding, callback) {
       this.push(out); // Pass out of transformer
     }
     this.currentObject = {};
-    this.currentObject['@value'] = line.slice(s+1);
+    this.currentObject['GEDVALUE'] = line.slice(s+1);
     this.lastLevels = {};
     this.lastLevels[0] = this.currentObject;
   } else {
@@ -101,7 +101,7 @@ Ged2Json.prototype._transform = function(line, encoding, callback) {
       console.log(line);
       throw new Error('No parent for level '+level);
     }
-    var newItem = { '@value': value };
+    var newItem = { 'GEDVALUE': value };
     if (typeof parent[code] === 'undefined') {
       parent[code] = newItem;
     } else {

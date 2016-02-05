@@ -66,6 +66,46 @@ The output structure of the `convert.js` script looks like:
 }
 ```
 
+To be parsed into RDF, it will need an output structure like:
+```json
+[
+  {
+    "@context": {
+      "foaf": "http://xmlns.com/foaf/0.1/",
+      "rel": "http://purl.org/vocab/relationship",
+      "bio": "http://purl.org/vocab/bio/0.1/",
+      "dc": "http://purl.org/dc/elements/1.1/"
+    },
+    "@id": "_:I101",
+    "@type": "foaf:Person",
+    "bio:relationship": {
+      "@id": "_:F101"
+    },
+    "foaf:gender": "F",
+    "foaf:name": "Jane /Smith/"
+  },
+  {
+    "@context": {
+      "foaf": "http://xmlns.com/foaf/0.1/",
+      "rel": "http://purl.org/vocab/relationship",
+      "bio": "http://purl.org/vocab/bio/0.1/",
+      "dc": "http://purl.org/dc/elements/1.1/"
+    },
+    "@id": "_:I102",
+    "@type": "foaf:Person",
+    "bio:child": {
+      "@id": "_:I103"
+    },
+    "bio:relationship": {
+      "@id": "_:F101"
+    },
+    "foaf:gender": "F",
+    "foaf:name": "Betty /Smith/"
+  }
+]
+```
+Meaning return a list of objects, and every object has its own `@context` set. Then a converter like `riot --output=RDF/XML ged.jsonld` can convert it to RDF/XML. (TODO)
+
 
 # Don't care about Semantic data
 Grab the `@graph` property from the result JSON, which is an array of JSON objects. Objects that have a `@type` property of `foaf:Person` are `INDI` objects in the original GEDCOM, and `@type` of `bio:Relationship` are `FAM` objects in the original file. Between those two types, all the properties of the original data file should be present.
@@ -142,7 +182,48 @@ But for traversing person-to-person relationships, it adds a needless step. The 
 * If one of the partners in a `bio:Marriage` has a Death event (or the first occurring Death if both are), that Death event is set as the `bio:concludingEvent` for the `bio:Marriage` if no `ANUL`, `DIV`, or `DIVF` exists. (TODO)
 * If `DEAT` and `BURI` or `CREM` exist, `bio:followingEvent` and `bio:precedingEvent` relationships are added. (TODO)
 
-The `INDI.FAMC.PEDI` (Pedigree) and `INDI.FAMC.STAT` (Status) tags break the standard relationship between an `INDI` and a `FAM` object. The `PEDI` and `STAT` attributes are not attributes of the `FAM` referenced by the `FAMC` ID, but rather attributes of the link that individual has with that family (reification of the link), which doesn't work well in JSON-LD. So, to get that to work properly, the `FAMC` property gets a new `ofFamily` attribute, which is set to the ID of the linked family, rather than the `FAMC` having that `@id` directly.
+There are a few places in the GEDCOM structure that break the standard linkage between nodes that an RDF graph has. Namely, the `INDI.FAMC.PEDI` (Pedigree) and `INDI.FAMC.STAT` (Status) tags break the standard `INDI.FAMC` linkage. The `PEDI` and `STAT` attributes are not attributes of the `FAM` referenced by the `FAMC` ID, but rather attributes of the link that individual has with that family, which doesn't work well in JSON-LD. Technically, it's a reification of the link.
+
+`SOUR` tags have the same situation; they are added onto a link to another node, and modify the link, rather than either of the nodes.
+
+So, to get that to work properly, when an object (e.g. a `foaf:name` property on a `foaf:Person`) has a `SOUR` property, the parent object (`foaf:Person` in this example) gets a `GEDREIF` property with a value of:
+
+```json
+{
+  "@type": "rdf:Statement",
+  "rdf:subject": "_:I101",
+  "rdf:predicate": "foaf:name",
+  "rdf:object": "John Smith",
+  "dc:source": "_:S101",
+}
+```
+
+If there are multiple `SOUR` references for that object, that property becomes an array of objects. If multiple `SOUR` references have the same ID, the `rdf:predicate` for that `SOUR` becomes an array of properties that source affects. (TODO)
+
+For pedigree information on an `INDI.FAMC`, the `INDI` object gets a `GEDREIF` attribute, which is set to: (TODO)
+
+```json
+{
+  "@type": "rdf:Statement",
+  "rdf:subject": "_:I101",
+  "rdf:predicate": "FAMC",
+  "rdf:object": "_:F101",
+  "dc:description": "natural"
+}
+```
+
+Breakdowns for being more specific about an `INDI.NAME` also exist in the GEDCOM specification. For example, an `INDI` with a `GIVN` and `SURN` additional tag on their `NAME`:
+
+```json
+{
+  "@type": "rdf:Statement",
+  "rdf:subject": "_:I101",
+  "rdf:predicate": "foaf:name",
+  "rdf:object": "John Smith",
+  "GIVN": "John",
+  "SURN": "Smith"
+}
+```
 
 # Visualization ideas:
 * [Pedigree tree](http://bl.ocks.org/mbostock/2966094): D3 "elbow dendrogram" using the "tree" D3 layout.
